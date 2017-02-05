@@ -27,3 +27,7 @@
 *.exe
 *.out
 *.app
+
+# Pro files
+*.pro
+*.pro.user
