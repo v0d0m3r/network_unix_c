@@ -20,19 +20,19 @@
 
 //------------------------------------------------------------------------
 
-int get_port(unsigned short* portno)
+int get_port(unsigned short* portno, char msg[])
 {
     static const int min_p = 1024;
-    printf("Введите номер порта:\n");
+    printf("%s", msg);
     scanf("%hu", portno);
     return (*portno < min_p) ? -1: 0;
 }
 
 //------------------------------------------------------------------------
 
-void get_ip(char* ip_num)
+void get_ip(char* ip_num, char msg[])
 {
-    printf("Введите ip-номер сервера:\n");
+    printf("%s", msg);
     scanf("%s", ip_num);
 }
 
@@ -40,20 +40,21 @@ void get_ip(char* ip_num)
 
 void work_client()
 {
-
+    // Создание сокета
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if(sockfd < 0) {
-        printf("Error : Could not create socket \n");
+        printf("Ошибка: Невозможно создать сокет\n");
         return;
     }
 
+    // Структура адресов для сервера
     struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
     socklen_t serv_sz = sizeof(serv_addr);
 
     unsigned short portno = 0;
-    if (get_port(&portno) < 0) {
-        printf("Error: Bad port: %d\n", portno);
+    if (get_port(&portno, "Введите номер порта:\n") < 0) {
+        printf("Ошибка: Неправильный порт: %d\n", portno);
         close(sockfd);
         return;
     }
@@ -61,13 +62,13 @@ void work_client()
     const unsigned short serv_ip_sz = 17;
     char serv_ip[serv_ip_sz];
     memset(&serv_ip, 0, serv_ip_sz);
-    get_ip(serv_ip);
+    get_ip(serv_ip, "Введите ip-номер сервера:\n");
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(portno);
-
+    // Переводим ip-строку в структуру sin_addr
     if (inet_aton(serv_ip , &serv_addr.sin_addr) < 0) {
-        printf("Error: Bad ip: %s\n", strerror(errno));
+        printf("Ошибка: Некорректный ip-адрес: %s\n", strerror(errno));
         close(sockfd);
         return;
     }
@@ -78,13 +79,14 @@ void work_client()
             return;
         }*/
 
-    const unsigned short buff_sz = 2048;
+    const unsigned short buff_sz = 20;
     char buff[buff_sz];
     memset(&buff, 0, buff_sz);
     int sz = 0;
-    const unsigned int usec_sleep = 100000;
+    const unsigned int usec_sleep = 100000; // 100 мсек
     for (int i=0; i < 100; ++i) {
         sprintf(buff, "qwersss%d", i);
+        // Отправляем пакет серверу
         sz = sendto(sockfd, &buff, buff_sz, MSG_NOSIGNAL,
                     (struct sockaddr*)&serv_addr,
                     serv_sz);
