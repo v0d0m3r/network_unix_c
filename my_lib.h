@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <errno.h>
+#include <sys/prctl.h>
+#include <signal.h>
 
 #include <sys/socket.h>
 #include <sys/types.h>
