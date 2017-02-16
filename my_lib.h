@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <limits.h>
 #include <errno.h>
 #include <sys/prctl.h>
