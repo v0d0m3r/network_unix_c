@@ -41,3 +41,34 @@ void get_ip(char* ip_num, char msg[])
 }
 
 //------------------------------------------------------------------------
+// Чтение данных нужной длины из сокета
+ssize_t recv_all(int fd, char* buf, size_t len)
+{
+    ssize_t received = 0;
+    ssize_t rem = len;
+    while (len) {
+        received = recv(fd, buf, len, 0);
+        if (received == -1) return -1;
+        if (received == 0) break;
+        buf += received;
+        len -= received;
+    }
+    return rem - len;
+}
+
+//------------------------------------------------------------------------
+// Отправка данных нужной длины из сокета
+ssize_t send_all(int fd, char* buf, size_t len)
+{
+    ssize_t sended = 0;
+    ssize_t rem = len;
+    while (len) {
+        sended = send(fd, buf, len, 0);
+        if (sended == -1) return -1;
+        buf += sended;
+        len -= sended;
+    }
+    return rem - len;
+}
+
+//------------------------------------------------------------------------

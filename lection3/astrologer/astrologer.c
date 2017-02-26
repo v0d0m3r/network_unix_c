@@ -5,9 +5,10 @@
  * - общение с клиентом "Звезда"
  * - общение с клиентом "Человек"
  *
- * Формат общения с "Звездой":
+ * Формат общения со "Звездой":
  * - запрос от "Звезды": "STARS SAY ZZ\n",
- * где ZZ - знак зодиака, длина строки 22б (добивается пробелами)
+ * где ZZ - знак зодиака;
+ * длина строки запроса 22б (добивается пробелами)
  * После заголовка запроса: прогноз длиной 80б (включая '\n')
  * - ответ к "Звезде": "THANKS\n"
  *
@@ -114,37 +115,6 @@ int get_data_horoscope(Horoscope_str* hs, char* dest_hs_data,
 
     strncpy(dest_hs_data, &hs->buf[pos], HS_DATA_SZ);
     return 0;
-}
-
-//------------------------------------------------------------------------
-// Чтение данных нужной длины из сокета
-ssize_t recv_all(int fd, char* buf, size_t len)
-{
-    ssize_t received = 0;
-    ssize_t rem = len;
-    while (len) {
-        received = recv(fd, buf, len, 0);
-        if (received == -1) return -1;
-        if (received == 0) break;
-        buf += received;
-        len -= received;
-    }
-    return rem - len;
-}
-
-//------------------------------------------------------------------------
-// Отправка данных нужной длины из сокета
-ssize_t send_all(int fd, char* buf, size_t len)
-{
-    ssize_t sended = 0;
-    ssize_t rem = len;
-    while (len) {
-        sended = send(fd, buf, len, 0);
-        if (sended == -1) return -1;
-        buf += sended;
-        len -= sended;
-    }
-    return rem - len;
 }
 
 //------------------------------------------------------------------------
