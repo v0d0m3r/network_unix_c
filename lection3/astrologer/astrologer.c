@@ -15,80 +15,386 @@
  * - запрос от "Человека": "HOROSCOPE ZZ\n" (аналогично "Звезде")
  * - ответ "Человеку": прогноз длиной 80б (включая '\n')
  *
- * Ответ на неправильные запросы - закрытие соединение
+ * Ответ на неправильные запросы - закрытие соединения
 */
 
 #include "../../my_lib.h"
 
-//------------------------------------------------------------------------
+#define COMM_ASTR_SZ 10
+#define HS_NAME_SZ 12
+#define HS_DATA_SZ 80
 
+//------------------------------------------------------------------------
+// Horoscope_str хранит гороскопы в формате:
+// hs_name_1hs_data_1...hs_name_nhs_data_n
 typedef struct {
     size_t size;  // Рамер строки
-    char* buff;   // Указатель на строку
-} Horoscope;
+    char* buf;    // Указатель на строку c гороскопами
+} Horoscope_str;
 
 //------------------------------------------------------------------------
-
-int add_horoscope(Horoscope *hs, char* name_hor, char* source)
+// Добавить новый гороскоп
+int push_back_horoscope(Horoscope_str* hs, const char* hs_name,
+                        const char* hs_data)
 {
-    size_t tmp_sz = hs->size + strlen(name_hor) + strlen(source);
-    char* tmp_str = (char*)malloc(tmp_sz*sizeof(char));
-    if (tmp_str == NULL) return -1;
+    if (       strlen(hs_name) != HS_NAME_SZ
+            || strlen(hs_data) != HS_DATA_SZ)
+        return -1;
+    // Выделяем память под старые и новые данные
+    size_t tmp_sz = hs->size + HS_NAME_SZ + HS_DATA_SZ;
+    char* tmp_str = (char*)malloc(tmp_sz * sizeof(char) + 1);
+    if (!tmp_str) return -1;
 
-    size_t start = 0;
-    for (size_t i = start; i < hs->size; ++i )
-        tmp_str[i] = hs->buff[i];
-    free(hs->buff);
+    char* begin_str = tmp_str;           // Запоминаем указатель на начало
+    for (size_t i=0; i < hs->size; ++i ) // Сохраняем предыдущие данные
+        tmp_str[i] = hs->buf[i];
 
-    start = hs->size;
-    for (size_t i = start; i < (start + strlen(name_hor)); ++i)
-        tmp_str[i] = name_hor[i];
+    if (hs->buf) free(hs->buf); // Очищаем старые данные
 
-    start = hs->size + strlen(name_hor);
-    for (size_t i = start; i < (start + strlen(source)); ++i)
-        tmp_str[i] = name_hor[i];
+    tmp_str += hs->size;        // Переносим указатель на 1 ячейку
+                                // новых данных
+    // Заполняем имя гороскопа
+    for (size_t i=0; i < HS_NAME_SZ; ++i) {
+        *tmp_str = hs_name[i];
+        ++tmp_str;
+    }
+    // Заполняем данные гороскопа
+    for (size_t i = 0; i < HS_DATA_SZ; ++i) {
+        *tmp_str = hs_data[i];
+        ++tmp_str;
+    }
 
-    hs->buff = tmp_str;
-    hs->size = tmp_sz;
-    free(tmp_str);
+    *tmp_str = '\0';
+
+    hs->buf = begin_str;    // Запоминаем "строку" с гороскопами
+    hs->size = tmp_sz;      // Запоминаем размер
+    return 0;
+}
+
+//------------------------------------------------------------------------
+// Поиск позиции данных гороскопа по его имени
+int find_pos_horoscope(Horoscope_str* hs, const char* hs_name,
+                       int* pos)
+{
+    *pos = -1;
+    if (!hs->size) return 0; // Нет гороскопов    
+
+    if (strlen(hs_name) != HS_NAME_SZ) return -1;
+
+    int h = HS_NAME_SZ + HS_DATA_SZ; // Шаг перехода между гороскопами
+
+    for (size_t i=0; i < hs->size; i += h) // Ищем гороскоп
+        if (!strncmp(&hs->buf[i], hs_name, HS_NAME_SZ)) {
+            *pos = i + HS_NAME_SZ;  // Запоминаем позицию
+            return 0;
+        }
+    return 0;
+}
+
+//------------------------------------------------------------------------
+// Заменить старый гороскоп на новый по позиции pos
+int replace_data_horoscope(Horoscope_str* hs, const char* source_hs_data,
+                           int pos)
+{
+    if (strlen(source_hs_data) != HS_DATA_SZ) return -1;
+    if (pos < 0 || (size_t)(pos+HS_DATA_SZ) > hs->size) return -1;
+
+    strncpy(&hs->buf[pos], source_hs_data, HS_DATA_SZ);
+    return 0;
+}
+
+//------------------------------------------------------------------------
+// Получить гороскоп по позиции pos
+int get_data_horoscope(Horoscope_str* hs, char* dest_hs_data,
+                       int pos)
+{
+
+    if (strlen(dest_hs_data) != HS_DATA_SZ) return -1;
+    if (pos < 0 || (size_t)(pos+HS_DATA_SZ) > hs->size) return -1;
+
+    strncpy(dest_hs_data, &hs->buf[pos], HS_DATA_SZ);
+    return 0;
+}
+
+//------------------------------------------------------------------------
+// Чтение данных нужной длины из сокета
+ssize_t recv_all(int fd, char* buf, size_t len)
+{
+    ssize_t received = 0;
+    ssize_t rem = len;
+    while (len) {
+        received = recv(fd, buf, len, 0);
+        if (received == -1) return -1;
+        if (received == 0) break;
+        buf += received;
+        len -= received;
+    }
+    return rem - len;
+}
+
+//------------------------------------------------------------------------
+// Отправка данных нужной длины из сокета
+ssize_t send_all(int fd, char* buf, size_t len)
+{
+    ssize_t sended = 0;
+    ssize_t rem = len;
+    while (len) {
+        sended = send(fd, buf, len, 0);
+        if (sended == -1) return -1;
+        buf += sended;
+        len -= sended;
+    }
+    return rem - len;
+}
+
+//------------------------------------------------------------------------
+// Инициализировать строку в формате:
+// "space1space2space3...spaceN-2\0"
+int prepare_str(char* str, size_t str_sz)
+{
+    if (!str_sz) return -1;
+    memset(str, ' ', str_sz);
+    str[str_sz-1] = '\0';
+    return 0;
+}
+
+//------------------------------------------------------------------------
+// Изменить сокету таймаут на прием/передачу данных
+void set_sendrecv_timeout(int cl_sockfd)
+{
+    struct timeval timeout;
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
+    socklen_t optlen = sizeof(timeout);
+
+    if (setsockopt(cl_sockfd, SOL_SOCKET, SO_RCVTIMEO,
+                   (char*)&timeout, optlen) < 0)
+        printf("Ошибка: Невозможно задать настройки сокету\n");
+    if (setsockopt(cl_sockfd, SOL_SOCKET, SO_SNDTIMEO,
+                   (char*)&timeout, optlen) < 0)
+        printf("Ошибка: Невозможно задать настройки сокету\n");    
+}
+
+//------------------------------------------------------------------------
+// true, если входная строка является
+// именем одного из гороскопов
+bool is_horoscope_name(const char* name)
+{   
+    if (strlen(name) != HS_NAME_SZ) return false;
+    static char* hs_tb[] = {
+        "Aries", "Taurus", "Gemini", "Cancer", "Leo",
+        "Virgo", "Libra", "Scorpio", "Sagittarius",
+        "Capricorn", "Aquarius", "Pisces"
+    };
+
+    char tmp_str[HS_NAME_SZ+1];
+    static const size_t hs_tb_sz = 12;   // Количество гороскопов
+    for (size_t i=0; i < hs_tb_sz; ++i) {        
+        prepare_str(tmp_str, HS_NAME_SZ+1);
+        tmp_str[HS_NAME_SZ-1] = '\n';
+
+        strncpy(tmp_str, hs_tb[i], strlen(hs_tb[i]));
+        if (!strncmp(tmp_str, name, HS_NAME_SZ))
+            return true;
+    }
+    return false;
+}
+
+//------------------------------------------------------------------------
+// Коды команд к астрологу
+enum Code_comm_astr
+{
+    stars_say, horoscope
+};
+
+//------------------------------------------------------------------------
+// Получить код входной команды
+int get_code_comm_astr(const char* comm_astr)
+{
+    if (strlen(comm_astr) != COMM_ASTR_SZ) return -1;
+
+    static char* comm_astr_tb[] = {
+        "STARS SAY ", "HOROSCOPE "
+    };
+
+    if (!strncmp(comm_astr, comm_astr_tb[stars_say], COMM_ASTR_SZ))
+        return stars_say;
+
+    if (!strncmp(comm_astr, comm_astr_tb[horoscope], COMM_ASTR_SZ))
+        return horoscope;
+
+    return -2;
+}
+
+//------------------------------------------------------------------------
+// Обрабатываем соединение со звездой
+int do_stars_say_comm_astr(int cl_sockfd, Horoscope_str* hs,
+                           char* hs_name, char* hs_data)
+{   
+    ssize_t sz = recv_all(cl_sockfd, hs_data, HS_DATA_SZ);
+    if (sz != HS_DATA_SZ) {
+        printf("Не получили данные необходимой длины, "
+               "закрываем соединение!\n");
+        return -1;
+    }
+    if (hs_data[HS_DATA_SZ-1] != '\n') {
+        printf("Неправильные данные гороскопа!"
+               "закрываем соединение!\n");
+        return -1;
+    }
+
+    int pos = 0;
+    int answ = find_pos_horoscope(hs, hs_name, &pos);
+    if (answ) {
+        printf("Не корректно имя гороскопа, "
+               "закрываем соединение!\n");
+        return -1;
+    }
+    //printf("pos: %d\n", pos);
+    if (pos == -1) { // Нет гороскопа в Horoscope_str
+        answ = push_back_horoscope(hs, hs_name, hs_data);
+        if (answ) {
+            printf("Не удалось добавить гороскоп, "
+                   "закрываем соединение!\n");
+            return -1;
+        }
+    }
+    else {
+        answ = replace_data_horoscope(hs, hs_data, pos);
+        if (answ) {
+            printf("Не удалось заменить гороскоп, "
+                   "закрываем соединение!\n");
+            return -1;
+        }
+    }
+
+    char thanks[] = "THANKS\n";
+    sz = send_all(cl_sockfd, thanks, strlen(thanks));
+    if (sz != (ssize_t)strlen(thanks)) {
+        printf("Плохая отправка данных\n");
+        return -1;
+    }
+    return 0;
+}
+
+//------------------------------------------------------------------------
+// Обрабатываем соединение с человеком
+int do_horoscope_comm_astr(int cl_sockfd, Horoscope_str* hs,
+                           char* hs_name, char* hs_data)
+{
+    int pos = 0;
+    ssize_t sz = 0;
+
+    int answ = find_pos_horoscope(hs, hs_name, &pos);
+    if (answ) {
+        printf("Некорректное имя гороскопа, "
+               "закрываем соединение!\n");
+        return -1;
+    }
+    if (pos == -1) { // Нет гороскопа
+        char sorry[] = "SORRY\n";
+        sz = send_all(cl_sockfd, sorry, strlen(sorry));
+        if (sz != (ssize_t)strlen(sorry)) {
+            printf("Плохая отправка данных, "
+                   "закрываем соединение!\n");
+            return -1;
+        }
+        return 0;
+    }
+
+    answ = get_data_horoscope(hs, hs_data, pos);
+    if (answ) {
+        printf("Не удалось получить гороскоп, "
+               "закрываем соединение!\n");
+        return -1;
+    }
+
+    sz = send_all(cl_sockfd, hs_data, HS_DATA_SZ);
+    if (sz != HS_DATA_SZ) {
+        printf("Плохая отправка данных "
+               "закрываем соединение!\n");
+        return -1;
+    }
     return 0;
 }
 
 //------------------------------------------------------------------------
 // do_client() обрабатывает соединение с сокетом клиента
-void do_client(int* cl_sockfd, struct sockaddr_in* client_addr)
+void do_client(int cl_sockfd, struct sockaddr_in* client_addr,
+               Horoscope_str* hs)
 {
-    const unsigned short buff_sz = 20;  // Буфер входной информации
-    char buff[buff_sz];
-    memset(&buff, 0, buff_sz);
+    char comm_astr[COMM_ASTR_SZ+1];
+    char hs_name  [HS_NAME_SZ+1];
+    char hs_data  [HS_DATA_SZ+1];
 
-    struct timeval timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_usec = 0;
-    socklen_t optlen = sizeof(timeout);
-    // Меняем таймаут на прием пакетов
-    if (setsockopt(*cl_sockfd, SOL_SOCKET, SO_RCVTIMEO,
-                   (char *)&timeout, optlen) < 0)
-        printf("Ошибка: Невозможно задать настройки сокету\n");
+    prepare_str(comm_astr, COMM_ASTR_SZ+1);
+    prepare_str(hs_name,   HS_NAME_SZ+1);
+    prepare_str(hs_data,   HS_DATA_SZ+1);
 
-    int sz = 0;
-    while(1) {          // Получаем данные от клиента
-        sz = recv(*cl_sockfd, &buff, buff_sz, MSG_NOSIGNAL);
-        if (sz <= 0) {  // Данные закончились - выходим
-            printf("sz: %d\n", sz);
-            break;
+    set_sendrecv_timeout(cl_sockfd);
+
+    int answ = 0;
+    ssize_t sz = 0;
+    int code_comm_astr = 0;
+    while (1) {
+        // Получаем данные от клиента
+        sz = recv_all(cl_sockfd, comm_astr, COMM_ASTR_SZ);
+        if (sz != COMM_ASTR_SZ) {
+            printf("Не получили данные необходимой длины, "
+                   "закрываем соединение:\n");
+            printf("ip %s, порт номер %d\n",
+                   inet_ntoa(client_addr->sin_addr),
+                   ntohs(client_addr->sin_port));
+            return;
         }
-        printf("Данные: %s", buff);
-        printf("от ip: %s, порт номер: %d\n",
-               inet_ntoa(client_addr->sin_addr),
-               ntohs(client_addr->sin_port));
+        printf("comm_astr: %s\n", comm_astr);
+
+        code_comm_astr = get_code_comm_astr(comm_astr);
+        if (code_comm_astr < 0) {
+            printf("Неизвестная команда закрываем соединение:\n");
+            printf("ip %s, порт номер %d\n",
+                   inet_ntoa(client_addr->sin_addr),
+                   ntohs(client_addr->sin_port));
+            return;
+        }
+
+        sz = recv_all(cl_sockfd, hs_name, HS_NAME_SZ);
+        if (sz != HS_NAME_SZ || !is_horoscope_name(hs_name)) {
+            printf("Некорректное название гороскопа!"
+                   "Закрываем соединение!\n");
+            return;
+        }
+        printf("hs_name: %s", hs_name);
+
+        answ = (code_comm_astr == stars_say)
+                ? do_stars_say_comm_astr(cl_sockfd, hs, hs_name, hs_data)
+                : do_horoscope_comm_astr(cl_sockfd, hs, hs_name, hs_data);
+        if(answ) return;
+
+        prepare_str(comm_astr, COMM_ASTR_SZ+1);
+        prepare_str(hs_name,   HS_NAME_SZ+1);
+        prepare_str(hs_data,   HS_DATA_SZ+1);
     }
+}
+
+//------------------------------------------------------------------------
+
+void print_current_hs(Horoscope_str* hs)
+{
+    if (!hs->size) return;
+    printf("********************\n");
+    printf("В буфере:\n");
+    printf("%s", hs->buf);
+    printf("********************\n");
 }
 
 //------------------------------------------------------------------------
 
 void work_server()
 {
+    Horoscope_str hs;
+    hs.buf = NULL;
+    hs.size = 0;
     // Создание сокета (AF_INET - сетевой(интернет),
     // SOCK_STREAM - потоковый сокет, 0 - по умолчанию TCP)
     int lsockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -96,12 +402,17 @@ void work_server()
         printf("Ошибка: Невозможно создать сокет\n");
         return;
     }
+    // Разрешаем сокету использовать адрес сразу
+    int one = 1;
+    if (setsockopt(lsockfd, SOL_SOCKET, SO_REUSEADDR,
+                   &one, sizeof(one)) < 0)
+        printf("Ошибка: Невозможно задать настройки сокету\n");
     // Структура адресов для сокета сервера
     struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
 
     unsigned short portno = 0;
-    if (get_port(&portno, "Введите ip сервера:\n") < 0) {
+    if (get_port(&portno, "Введите порт сервера:\n") < 0) {
         printf("Ошибка: Неправильный порт: %d\n", portno);
         close(lsockfd);
         return;
@@ -127,65 +438,22 @@ void work_server()
             printf("Ошибка: %s\n", strerror(errno));
             break;
         }
-        do_client(&cl_sockfd, &client_addr); // Работаем с клиентом
-
+        printf("***********new client***************\n");
+        do_client(cl_sockfd, &client_addr, &hs); // Работаем с клиентом
+        print_current_hs(&hs);
         close(cl_sockfd);                   // Закрываем сокет клиента
         memset(&client_addr, 0, client_sz); // Обнуляем память
                                             // адресов клиента
     }
+    if (hs.buf) free(hs.buf);
     close(lsockfd);
-}
-
-//------------------------------------------------------------------------
-
-int add_space(char* str, size_t startpos, size_t finishpos)
-{
-    if (startpos >= finishpos) return -1;
-    if (strlen(str) <= finishpos) return -1;
-
-    for (size_t i = startpos; i < finishpos; ++i)
-        str[i] = ' ';
-    str[finishpos] = '\n';
-    return 0;
-}
-
-//------------------------------------------------------------------------
-
-bool is_hrscp_nm(char* name)
-{
-    static const size_t hrscp_tb_sz = 12;
-    static char* hrscp_tb[] = {
-        "Aries", "Taurus", "Gemini", "Cancer", "Leo",
-        "Virgo", "Libra", "Scorpio", "Sagittarius",
-        "Capricorn", "Aquarius", "Pisces"
-    };
-    char tmp_str[hrscp_tb_sz];
-    int res = 0;
-    for (size_t i=0; i < hrscp_tb_sz; ++i) {
-        strncpy(tmp_str, hrscp_tb[i], strlen(hrscp_tb[i]));
-        res = add_space(tmp_str, strlen(hrscp_tb[i]), hrscp_tb_sz-1);
-        if (res) printf("Ошибка: не удалось добавить пробелы");
-        if (!strncmp(tmp_str, name, strlen(tmp_str)))
-            return true;
-    }
-    return false;
 }
 
 //------------------------------------------------------------------------
 
 int main()
 {
-    //work_server();
-    Horoscope hs;
-    hs.size = 0;
-
-    char name_hor[] = "Aries      \n";
-    printf("Name sz: %u\n", strlen(name_hor));
-
-    if (is_hrscp_nm(name_hor))
-        printf("yeah!\n");
-
-
+    work_server();
     return 0;
 }
 
