@@ -21,6 +21,43 @@
 
 //------------------------------------------------------------------------
 
+void get_hs_query(int hs_id, char* hs_query)
+{
+    char tmp[COMM_ASTR_SZ+HS_NAME_SZ+1];
+    prepare_str(tmp, COMM_ASTR_SZ+HS_NAME_SZ+1);
+
+    static char* hs_tb[] = {
+        "Aries", "Taurus", "Gemini", "Cancer", "Leo",
+        "Virgo", "Libra", "Scorpio", "Sagittarius",
+        "Capricorn", "Aquarius", "Pisces"
+    };
+}
+
+//------------------------------------------------------------------------
+
+int do_human(int sockfd)
+{
+
+    const unsigned short buff_sz = 20;
+    char buff[buff_sz];
+    memset(&buff, 0, buff_sz);
+    int sz = 0;
+    const unsigned int usec_sleep = 100000; // 100 мсек
+    for (int i=0; i < 100; ++i) {
+        sprintf(buff, "qwersss%d\n", i);
+        // Отправляем пакет серверу
+        sz = send(sockfd, &buff, buff_sz, MSG_NOSIGNAL);
+        if (sz <= 0) {
+            printf("sz: %d\n", sz);
+            break;
+        }
+        memset(&buff, 0, buff_sz);
+        usleep(usec_sleep);
+    }
+}
+
+//------------------------------------------------------------------------
+
 void work_client()
 {
     // Создание сокета
@@ -29,6 +66,10 @@ void work_client()
         printf("Ошибка: Невозможно создать сокет\n");
         return;
     }
+
+    int answ = set_sendrecv_timeout(cl_sockfd);
+    if (answ) printf("Ошибка: Невозможно задать настройки сокету\n");
+
     // Структура адресов для сервера
     struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
@@ -60,23 +101,11 @@ void work_client()
             printf("Ошибка: %s\n", strerror(errno));
             return;
         }
-
-    const unsigned short buff_sz = 20;
-    char buff[buff_sz];
-    memset(&buff, 0, buff_sz);
-    int sz = 0;
-    const unsigned int usec_sleep = 100000; // 100 мсек
-    for (int i=0; i < 100; ++i) {
-        sprintf(buff, "qwersss%d\n", i);
-        // Отправляем пакет серверу
-        sz = send(sockfd, &buff, buff_sz, MSG_NOSIGNAL);
-        if (sz <= 0) {
-            printf("sz: %d\n", sz);
-            break;
-        }
-        memset(&buff, 0, buff_sz);
-        usleep(usec_sleep);
+    while (true) {
+        answ = do_human();
+        if (answ) break;
     }
+
     close(sockfd);
 }
 

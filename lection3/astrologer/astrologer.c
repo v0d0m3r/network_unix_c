@@ -21,18 +21,6 @@
 
 #include "../../my_lib.h"
 
-#define COMM_ASTR_SZ 10
-#define HS_NAME_SZ 12
-#define HS_DATA_SZ 80
-
-//------------------------------------------------------------------------
-// Horoscope_str хранит гороскопы в формате:
-// hs_name_1hs_data_1...hs_name_nhs_data_n
-typedef struct {
-    size_t size;  // Рамер строки
-    char* buf;    // Указатель на строку c гороскопами
-} Horoscope_str;
-
 //------------------------------------------------------------------------
 // Добавить новый гороскоп
 int push_back_horoscope(Horoscope_str* hs, const char* hs_name,
@@ -115,34 +103,6 @@ int get_data_horoscope(Horoscope_str* hs, char* dest_hs_data,
 
     strncpy(dest_hs_data, &hs->buf[pos], HS_DATA_SZ);
     return 0;
-}
-
-//------------------------------------------------------------------------
-// Инициализировать строку в формате:
-// "space1space2space3...spaceN-2\0"
-int prepare_str(char* str, size_t str_sz)
-{
-    if (!str_sz) return -1;
-    memset(str, ' ', str_sz);
-    str[str_sz-1] = '\0';
-    return 0;
-}
-
-//------------------------------------------------------------------------
-// Изменить сокету таймаут на прием/передачу данных
-void set_sendrecv_timeout(int cl_sockfd)
-{
-    struct timeval timeout;
-    timeout.tv_sec = 2;
-    timeout.tv_usec = 0;
-    socklen_t optlen = sizeof(timeout);
-
-    if (setsockopt(cl_sockfd, SOL_SOCKET, SO_RCVTIMEO,
-                   (char*)&timeout, optlen) < 0)
-        printf("Ошибка: Невозможно задать настройки сокету\n");
-    if (setsockopt(cl_sockfd, SOL_SOCKET, SO_SNDTIMEO,
-                   (char*)&timeout, optlen) < 0)
-        printf("Ошибка: Невозможно задать настройки сокету\n");    
 }
 
 //------------------------------------------------------------------------
@@ -301,9 +261,8 @@ void do_client(int cl_sockfd, struct sockaddr_in* client_addr,
     prepare_str(hs_name,   HS_NAME_SZ+1);
     prepare_str(hs_data,   HS_DATA_SZ+1);
 
-    set_sendrecv_timeout(cl_sockfd);
-
-    int answ = 0;
+    int answ = set_sendrecv_timeout(cl_sockfd);
+    if (answ) printf("Ошибка: Невозможно задать настройки сокету\n");
     ssize_t sz = 0;
     int code_comm_astr = 0;
     while (1) {

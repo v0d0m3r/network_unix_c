@@ -21,6 +21,18 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
+#define COMM_ASTR_SZ 10
+#define HS_NAME_SZ 12
+#define HS_DATA_SZ 80
+
+//------------------------------------------------------------------------
+// Horoscope_str хранит гороскопы в формате:
+// hs_name_1hs_data_1...hs_name_nhs_data_n
+typedef struct {
+    size_t size;  // Рамер строки
+    char* buf;    // Указатель на строку c гороскопами
+} Horoscope_str;
+
 //------------------------------------------------------------------------
 // Получаем значение порта в аргумент
 // Возвращаемое значение: 0 успех, -1 неправильный порт
@@ -69,6 +81,37 @@ ssize_t send_all(int fd, char* buf, size_t len)
         len -= sended;
     }
     return rem - len;
+}
+
+//------------------------------------------------------------------------
+// Изменить сокету таймаут на прием/передачу данных
+int set_sendrecv_timeout(int cl_sockfd)
+{
+    struct timeval timeout;
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
+    socklen_t optlen = sizeof(timeout);
+
+    if (setsockopt(cl_sockfd, SOL_SOCKET, SO_RCVTIMEO,
+                   (char*)&timeout, optlen) < 0)
+        return -1;
+
+    if (setsockopt(cl_sockfd, SOL_SOCKET, SO_SNDTIMEO,
+                   (char*)&timeout, optlen) < 0)
+        return -1;
+
+    return 0;
+}
+
+//------------------------------------------------------------------------
+// Инициализировать строку в формате:
+// "space1space2space3...spaceN-2\0"
+int prepare_str(char* str, size_t str_sz)
+{
+    if (!str_sz) return -1;
+    memset(str, ' ', str_sz);
+    str[str_sz-1] = '\0';
+    return 0;
 }
 
 //------------------------------------------------------------------------
