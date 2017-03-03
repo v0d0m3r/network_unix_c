@@ -198,9 +198,9 @@ int do_stars_say_comm_astr(int cl_sockfd, Horoscope_str* hs,
         }
     }
 
-    char thanks[] = "THANKS\n";
-    sz = send_all(cl_sockfd, thanks, strlen(thanks));
-    if (sz != (ssize_t)strlen(thanks)) {
+
+    sz = send_all(cl_sockfd, "THANKS!\n", PROTOCOL_ANSWER_SZ);
+    if (sz != PROTOCOL_ANSWER_SZ) {
         printf("Плохая отправка данных\n");
         return -1;
     }
@@ -221,10 +221,9 @@ int do_horoscope_comm_astr(int cl_sockfd, Horoscope_str* hs,
                "закрываем соединение!\n");
         return -1;
     }
-    if (pos == -1) { // Нет гороскопа
-        char sorry[] = "SORRY\n";
-        sz = send_all(cl_sockfd, sorry, strlen(sorry));
-        if (sz != (ssize_t)strlen(sorry)) {
+    if (pos == -1) { // Нет гороскопа        
+        sz = send_all(cl_sockfd, "SORRY! \n", PROTOCOL_ANSWER_SZ);
+        if (sz != PROTOCOL_ANSWER_SZ) {
             printf("Плохая отправка данных, "
                    "закрываем соединение!\n");
             return -1;

@@ -21,39 +21,133 @@
 
 //------------------------------------------------------------------------
 
-void get_hs_query(int hs_id, char* hs_query)
+void clear_input()
 {
-    char tmp[COMM_ASTR_SZ+HS_NAME_SZ+1];
-    prepare_str(tmp, COMM_ASTR_SZ+HS_NAME_SZ+1);
-
-    static char* hs_tb[] = {
-        "Aries", "Taurus", "Gemini", "Cancer", "Leo",
-        "Virgo", "Libra", "Scorpio", "Sagittarius",
-        "Capricorn", "Aquarius", "Pisces"
-    };
+    char ch;
+    while ((ch = getchar()) != '\n' && ch != EOF) { }
 }
 
 //------------------------------------------------------------------------
 
-int do_human(int sockfd)
+int get_hs_code()
 {
+    printf("***********************************\n"
+           "Введите номер гороскопа клиента "
+           "от 1 до 12\n или -1 для выхода.\n");
+    static const int hs_min_num = 1;
+    int hs_code = 0;
 
-    const unsigned short buff_sz = 20;
-    char buff[buff_sz];
-    memset(&buff, 0, buff_sz);
-    int sz = 0;
-    const unsigned int usec_sleep = 100000; // 100 мсек
-    for (int i=0; i < 100; ++i) {
-        sprintf(buff, "qwersss%d\n", i);
-        // Отправляем пакет серверу
-        sz = send(sockfd, &buff, buff_sz, MSG_NOSIGNAL);
-        if (sz <= 0) {
-            printf("sz: %d\n", sz);
-            break;
-        }
-        memset(&buff, 0, buff_sz);
-        usleep(usec_sleep);
+    if (scanf("%d", &hs_code) != 1) { // Очищаем ввод
+        clear_input();
+        return -2;
     }
+
+    if (hs_code == -1) return hs_code; // Выход
+    if (hs_code < hs_min_num || hs_code > HS_COUNT) return -2;
+
+    --hs_code;  // Приводим код к нашему формату: [0, 11]
+    return hs_code;
+}
+
+//------------------------------------------------------------------------
+
+int get_hs_query(int hs_code, char* hs_query)
+{
+    if (strlen(hs_query) != COMM_ASTR_SZ+HS_NAME_SZ) return -1;
+    if (hs_code < 0 && hs_code > HS_COUNT-1) return -1;
+
+    char tmp[COMM_ASTR_SZ+HS_NAME_SZ+1];
+    prepare_str(tmp, COMM_ASTR_SZ+HS_NAME_SZ+1);
+
+    static const char hs_comm[] = "HOROSCOPE ";
+    strncpy(tmp, hs_comm, strlen(hs_comm)); // Заполняем команду
+
+    tmp[COMM_ASTR_SZ] = '\0';               // Урезаем strlen строки
+
+    static const char* hs_tb[] = {
+        "Aries", "Taurus", "Gemini", "Cancer", "Leo",
+        "Virgo", "Libra", "Scorpio", "Sagittarius",
+        "Capricorn", "Aquarius", "Pisces"
+    };
+    // Вставляем название гороскопа после команды
+    strncat(tmp, hs_tb[hs_code], strlen(hs_tb[hs_code]));
+    strncpy(hs_query, tmp, strlen(tmp));    // Формируем запрос
+    return 0;
+}
+
+//------------------------------------------------------------------------
+
+bool is_protocol_answ(char* hs_data)
+{
+    static const size_t answ_tb_sz = 3;
+    static const char* answ_tb[] = {
+        "SORRY! \n", "THANKS!\n", "DENIED!\n"
+    };
+
+    for (size_t i=0; i < answ_tb_sz; ++i) {
+        if (!strncmp(hs_data, answ_tb[i], strlen(answ_tb[i]))) {
+            printf("%s", answ_tb[i]);
+            return true;
+        }
+    }
+    return false;
+}
+
+//------------------------------------------------------------------------
+
+int get_hs_data(int sockfd)
+{
+    // Ответ - данные
+    char hs_data [HS_DATA_SZ+1];
+    prepare_str(hs_data, HS_DATA_SZ+1);
+
+    ssize_t sz = recv_all(sockfd, hs_data, PROTOCOL_ANSWER_SZ);
+    if (sz != PROTOCOL_ANSWER_SZ) {
+        printf("Плохая отправка данных, "
+               "закрываем соединение!\n");
+        return -1;
+    }
+
+    if (is_protocol_answ(hs_data)) return 0;
+
+    hs_data[PROTOCOL_ANSWER_SZ] = '\0';
+
+    char tmp[HS_DATA_SZ+1 - PROTOCOL_ANSWER_SZ];
+    prepare_str(tmp, HS_DATA_SZ+1 - PROTOCOL_ANSWER_SZ);
+
+    sz = recv_all(sockfd, tmp, HS_DATA_SZ-PROTOCOL_ANSWER_SZ);
+    if (sz != (ssize_t)strlen(tmp)) {
+        printf("Плохая отправка данных, "
+               "закрываем соединение!\n");
+        return -1;
+    }
+    strncat(hs_data, tmp, strlen(tmp));
+    printf("%d\n", strlen(hs_data));
+    printf(hs_data);
+
+    return 0;
+}
+
+//------------------------------------------------------------------------
+
+int do_human(int sockfd, int hs_code)
+{
+    char hs_query[COMM_ASTR_SZ+HS_NAME_SZ+1];
+    prepare_str(hs_query, COMM_ASTR_SZ+HS_NAME_SZ+1);
+    hs_query[COMM_ASTR_SZ+HS_NAME_SZ-1] = '\n';
+
+    if (get_hs_query(hs_code, hs_query)) {
+        printf("Ошибка: не удалось сформировать запрос!\n");
+        return -1;
+    }
+    printf("%s", hs_query);
+    // Запрос гороскопа
+    ssize_t sz = send_all(sockfd, hs_query, COMM_ASTR_SZ+HS_NAME_SZ);
+    if (sz != COMM_ASTR_SZ+HS_NAME_SZ) {
+        printf("Плохая отправка данных\n");
+        return -1;
+    }
+    return get_hs_data(sockfd);
 }
 
 //------------------------------------------------------------------------
@@ -67,7 +161,7 @@ void work_client()
         return;
     }
 
-    int answ = set_sendrecv_timeout(cl_sockfd);
+    int answ = set_sendrecv_timeout(sockfd);
     if (answ) printf("Ошибка: Невозможно задать настройки сокету\n");
 
     // Структура адресов для сервера
@@ -101,12 +195,41 @@ void work_client()
             printf("Ошибка: %s\n", strerror(errno));
             return;
         }
-    while (true) {
-        answ = do_human();
-        if (answ) break;
-    }
 
+    int hs_code = 0;
+    while (true) {
+        hs_code = get_hs_code();
+        if (hs_code == -1) break;    // Получен код завершения
+        if (hs_code < 0)
+            printf("Ошибка: неправильный код гороскопа!\n");
+        else {
+            answ = do_human(sockfd, hs_code);
+            if (answ) break;
+        }
+    }
     close(sockfd);
+}
+
+//------------------------------------------------------------------------
+
+void test()
+{
+    int hs_code = 0;
+    char hs_query[COMM_ASTR_SZ+HS_NAME_SZ+1];
+    while (1) {
+        prepare_str(hs_query, COMM_ASTR_SZ+HS_NAME_SZ+1);
+        hs_query[COMM_ASTR_SZ+HS_NAME_SZ-1] = '\n';
+
+        hs_code = get_hs_code();
+        if (hs_code == -1) break;    // Получен код завершения
+        if (hs_code < 0)
+            printf("Ошибка: неправильный код гороскопа!\n");
+
+        if (get_hs_query(hs_code, hs_query))
+            printf("Ошибка: неправильный код гороскопа!\n");
+        else
+            printf("%s", hs_query);
+    }
 }
 
 //------------------------------------------------------------------------

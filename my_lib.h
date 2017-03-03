@@ -21,9 +21,11 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
-#define COMM_ASTR_SZ 10
-#define HS_NAME_SZ 12
-#define HS_DATA_SZ 80
+#define COMM_ASTR_SZ        10
+#define HS_NAME_SZ          12
+#define HS_DATA_SZ          80
+#define HS_COUNT            12
+#define PROTOCOL_ANSWER_SZ  8
 
 //------------------------------------------------------------------------
 // Horoscope_str хранит гороскопы в формате:
@@ -88,7 +90,7 @@ ssize_t send_all(int fd, char* buf, size_t len)
 int set_sendrecv_timeout(int cl_sockfd)
 {
     struct timeval timeout;
-    timeout.tv_sec = 2;
+    timeout.tv_sec = 10;
     timeout.tv_usec = 0;
     socklen_t optlen = sizeof(timeout);
 
