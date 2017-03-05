@@ -1,5 +1,5 @@
 /*
- * TCP-клиент, который реализует понятие "Человек"
+ * TCP-клиент, который реализует понятие "Человек" и Звезда
  *
  * Функции "Человека":
  * - общение с сервером "Астролог"/"Прокси"
@@ -10,12 +10,24 @@
  * длина строки запроса 22б (добивается пробелами)
  * - ответ от "Астролога"/"Прокси":
  * прогноз длиной 80б (включая '\n' в конце строки),
- * если нет гороскопа ответ: "SORRY\n"
- * - если в ответе придет "DENIED!\n", то
- * то выводим сообщение: "Ответ поддерживается только звездой\n"
+ * если нет гороскопа ответ(8б): "SORRY\n"
+ * - если в ответе придет "THANKS!\n",
+ * то выводим сообщение - "DENIED!\n"
+ *
+ * Функции "Звезды":
+ * - общение с сервером "Астролог"
+ *
+ * Формат общения с "Астрологом":
+ * - запрос к "Астрологу": "STARS SAY ZZ\n"
+ * (аналогично "Человеку")
+ * - ответ от "Астролога"(8б):
+ * "THANKS!\n", если придет "SORRY\n",
+ * то выводим сообщение - "DENIED!\n"
  *
  * Неправильные ответы - закрытие соединения
 */
+
+//------------------------------------------------------------------------
 
 #include "../../my_lib.h"
 
@@ -29,28 +41,45 @@ void clear_input()
 
 //------------------------------------------------------------------------
 
-int get_hs_code()
+int get_int()
 {
-    printf("***********************************\n"
-           "Введите номер гороскопа клиента "
-           "от 1 до 12\n или -1 для выхода.\n");
-    static const int hs_min_num = 1;
-    int hs_code = 0;
-
-    if (scanf("%d", &hs_code) != 1) { // Очищаем ввод
-        clear_input();
-        return -2;
+    int n = 0;
+    while(true) {
+        if (scanf("%d", &n) != 1) {
+            printf("Это не число; попробуйте ещё раз\n");
+            clear_input();  // Очищаем ввод
+        }
     }
+}
 
-    if (hs_code == -1) return hs_code; // Выход
-    if (hs_code < hs_min_num || hs_code > HS_COUNT) return -2;
-
-    --hs_code;  // Приводим код к нашему формату: [0, 11]
+//------------------------------------------------------------------------
+// get_hs_code() отвечает за консольный ввод код гороскопа
+// Возвращаемые значения:
+// - код гороскопа в диапазоне [0;11];
+// - "-1" - код выхода
+int get_hs_code(const char* client_name)
+{
+    const int low = 1;
+    const int hight = 12;
+    const int exit = -1;
+    printf("***********************************\n"
+           "%s: введите код гороскопа от %d до %d\n "
+           "или %d для выхода:\n", client_name, low, hight, exit);
+    int hs_code = 0;
+    while(true) {
+        hs_code = get_int();
+        if (hs_code == exit) return exit;  // Код выхода
+        if (hs_code < low || hs_code > hight)
+            printf("Вне диапазона [%d, %d], "
+                   "повторите ввод\n", low, hight);
+    }
+    // Приводим код к нашему диапазону: [0, 11]
+    --hs_code;
     return hs_code;
 }
 
 //------------------------------------------------------------------------
-
+// get_hs_query() формирует запрос к астрологу
 int get_hs_query(int hs_code, char* hs_query)
 {
     if (strlen(hs_query) != COMM_ASTR_SZ+HS_NAME_SZ) return -1;
@@ -59,7 +88,7 @@ int get_hs_query(int hs_code, char* hs_query)
     char tmp[COMM_ASTR_SZ+HS_NAME_SZ+1];
     prepare_str(tmp, COMM_ASTR_SZ+HS_NAME_SZ+1);
 
-    static const char hs_comm[] = "HOROSCOPE ";
+    const char hs_comm[] = "HOROSCOPE ";
     strncpy(tmp, hs_comm, strlen(hs_comm)); // Заполняем команду
 
     tmp[COMM_ASTR_SZ] = '\0';               // Урезаем strlen строки
@@ -76,38 +105,39 @@ int get_hs_query(int hs_code, char* hs_query)
 }
 
 //------------------------------------------------------------------------
-
+// is_protocol_answ() проверяет:
+// входная строка - это ответ по протоколу?
 bool is_protocol_answ(char* hs_data)
 {
-    static const size_t answ_tb_sz = 3;
-    static const char* answ_tb[] = {
-        "SORRY! \n", "THANKS!\n", "DENIED!\n"
-    };
-
-    for (size_t i=0; i < answ_tb_sz; ++i) {
-        if (!strncmp(hs_data, answ_tb[i], strlen(answ_tb[i]))) {
-            printf("%s", answ_tb[i]);
-            return true;
-        }
+    if (!strncmp(hs_data, "SORRY! \n", PROTOCOL_ANSWER_SZ)) {
+        printf("%s", hs_data);
+        return true;
     }
+
+    if (!strncmp(hs_data, "THANKS!\n", PROTOCOL_ANSWER_SZ)) {
+        printf("%s", "DENIED!\n");
+        return true;
+    }
+
     return false;
 }
 
 //------------------------------------------------------------------------
-
+// get_hs_data() получает данные гороскопа от астролога
 int get_hs_data(int sockfd)
-{
-    // Ответ - данные
-    char hs_data [HS_DATA_SZ+1];
+{    
+    char hs_data [HS_DATA_SZ+1];    // Строка данных гороскопа
     prepare_str(hs_data, HS_DATA_SZ+1);
 
+    // Получаем часть гороскопа
     ssize_t sz = recv_all(sockfd, hs_data, PROTOCOL_ANSWER_SZ);
     if (sz != PROTOCOL_ANSWER_SZ) {
-        printf("Плохая отправка данных, "
-               "закрываем соединение!\n");
+        printf("Ошибка: приняты некорректные данные! "
+               "Закрываем соединение!\n");
         return -1;
     }
 
+    // Данные являются ответом по протоколу?
     if (is_protocol_answ(hs_data)) return 0;
 
     hs_data[PROTOCOL_ANSWER_SZ] = '\0';
@@ -115,27 +145,27 @@ int get_hs_data(int sockfd)
     char tmp[HS_DATA_SZ+1 - PROTOCOL_ANSWER_SZ];
     prepare_str(tmp, HS_DATA_SZ+1 - PROTOCOL_ANSWER_SZ);
 
+    // Дополучение данных гороскопа
     sz = recv_all(sockfd, tmp, HS_DATA_SZ-PROTOCOL_ANSWER_SZ);
     if (sz != (ssize_t)strlen(tmp)) {
-        printf("Плохая отправка данных, "
-               "закрываем соединение!\n");
+        printf("Ошибка: приняты некорректные данные! "
+               "Закрываем соединение!\n");
         return -1;
     }
     strncat(hs_data, tmp, strlen(tmp));
-    printf("%d\n", strlen(hs_data));
     printf(hs_data);
-
     return 0;
 }
 
 //------------------------------------------------------------------------
-
+// do_human() отправляет "человеческий" запрос
+// и получает данные гороскопа
 int do_human(int sockfd, int hs_code)
 {
     char hs_query[COMM_ASTR_SZ+HS_NAME_SZ+1];
     prepare_str(hs_query, COMM_ASTR_SZ+HS_NAME_SZ+1);
     hs_query[COMM_ASTR_SZ+HS_NAME_SZ-1] = '\n';
-
+    // Формирование запроса гороскопа
     if (get_hs_query(hs_code, hs_query)) {
         printf("Ошибка: не удалось сформировать запрос!\n");
         return -1;
@@ -144,25 +174,57 @@ int do_human(int sockfd, int hs_code)
     // Запрос гороскопа
     ssize_t sz = send_all(sockfd, hs_query, COMM_ASTR_SZ+HS_NAME_SZ);
     if (sz != COMM_ASTR_SZ+HS_NAME_SZ) {
-        printf("Плохая отправка данных\n");
+        printf("Ошибка: плохая отправка данных! "
+               "Закрываем соединение!\n");
         return -1;
     }
-    return get_hs_data(sockfd);
+    return get_hs_data(sockfd); // Получение данных гороскопа
+}
+
+//------------------------------------------------------------------------
+// do_star() отправляет "звездный" запрос
+// и отправляет данные гороскопа
+int do_star(int sockfd, int hs_code)
+{
+    return 0;
 }
 
 //------------------------------------------------------------------------
 
+int is_star(bool* star)
+{
+    /*const int low = 1;
+    const int hight = 12;
+    const int exit = -1;
+    printf("Выберите режим\n "
+           "или %d для выхода:\n", client_name, low, hight, exit);
+    int hs_code = 0;
+    while(true) {
+        hs_code = get_int();
+        if (hs_code == exit) return exit;  // Код выхода
+        if (hs_code < low || hs_code > hight)
+            printf("Вне диапазона [%d, %d], "
+                   "повторите ввод\n", low, hight);
+    }
+    // Приводим код к нашему диапазону: [0, 11]
+    --hs_code;
+    return hs_code;*/
+    return 0;
+}
+
+//------------------------------------------------------------------------
+// work_client() обрабатывает соединение с астрологом
 void work_client()
 {
     // Создание сокета
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd < 0) {
-        printf("Ошибка: Невозможно создать сокет\n");
+        printf("Ошибка: невозможно создать сокет\n");
         return;
     }
 
     int answ = set_sendrecv_timeout(sockfd);
-    if (answ) printf("Ошибка: Невозможно задать настройки сокету\n");
+    if (answ) printf("Ошибка: невозможно задать настройки сокету\n");
 
     // Структура адресов для сервера
     struct sockaddr_in serv_addr;
@@ -171,7 +233,7 @@ void work_client()
 
     unsigned short portno = 0;
     if (get_port(&portno, "Введите номер порта:\n") < 0) {
-        printf("Ошибка: Неправильный порт: %d\n", portno);
+        printf("Ошибка: неправильный порт: %d\n", portno);
         close(sockfd);
         return;
     }
@@ -185,7 +247,8 @@ void work_client()
     serv_addr.sin_port = htons(portno);
     // Переводим ip-строку в структуру sin_addr
     if (inet_aton(serv_ip , &serv_addr.sin_addr) == 0) {
-        printf("Ошибка: Некорректный ip-адрес: %s\n", strerror(errno));
+        printf("Ошибка: некорректный ip-адрес: %s\n",
+               strerror(errno));
         close(sockfd);
         return;
     }
@@ -197,15 +260,19 @@ void work_client()
         }
 
     int hs_code = 0;
+    bool star = false;
+    int exit = -1;
     while (true) {
-        hs_code = get_hs_code();
-        if (hs_code == -1) break;    // Получен код завершения
-        if (hs_code < 0)
-            printf("Ошибка: неправильный код гороскопа!\n");
-        else {
-            answ = do_human(sockfd, hs_code);
-            if (answ) break;
-        }
+        answ = is_star(&star);
+        if (answ == exit) break;
+
+        hs_code = (star) ? get_hs_code("Клиент-звезда")
+                         : get_hs_code("Клиент-человек");
+        if (hs_code == exit) break;    // Получен код завершения
+
+        answ = (star) ? do_star (sockfd, hs_code)
+                      : do_human(sockfd, hs_code);
+        if (answ) break;
     }
     close(sockfd);
 }
@@ -220,7 +287,7 @@ void test()
         prepare_str(hs_query, COMM_ASTR_SZ+HS_NAME_SZ+1);
         hs_query[COMM_ASTR_SZ+HS_NAME_SZ-1] = '\n';
 
-        hs_code = get_hs_code();
+        hs_code = get_hs_code("star");
         if (hs_code == -1) break;    // Получен код завершения
         if (hs_code < 0)
             printf("Ошибка: неправильный код гороскопа!\n");
