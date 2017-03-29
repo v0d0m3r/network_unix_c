@@ -1,42 +1,100 @@
 /*
- * TCP-сервер, который передает строку "Hi there!\n"
- * каждому клиенту 5 раз с интервалом 1 сек
  * Реализована модель fork-per-requrest
+ *
+ * TCP-сервер для "Человека" и -клиент для "Астролога",
+ * реализует понятие "Секретарь" (Прокси)
+ *
+ * Функции "Секретаря":
+ * - общение с сервером "Астролог"
+ * - общение с клиентом "Человек"
+ *
+ * Формат общения с "Астрологом":
+ * - передача "Человеческого запроса" к "Астрологу":
+ * "HOROSCOPE ZZ\n", где ZZ - знак зодиака;
+ * длина строки запроса 22б (добивается пробелами)
+ * - ответ от "Астролога":
+ * прогноз длиной 80б (включая '\n' в конце строки),
+ * если нет гороскопа ответ(8б): "SORRY\n"
+ * - если в ответе придет "THANKS!\n",
+ * то выводим сообщение - "DENIED!\n"
+ *
+ * Формат общения с "Человеком":
+ * - получение "Человеческого" запроса
+ * - отправка ответа от "Астролога"
+ *
+ * Если придет запрос от "Звезды",
+ * то выводим сообщение - "DENIED!\n" и закрываем содинение
+ *
+ * Неправильные запросы и ответы - закрытие соединения
 */
 
+//------------------------------------------------------------------------
+
 #include "../../my_lib.h"
+
+//------------------------------------------------------------------------
+
+int recv_human_query()
+{
+
+}
+
+//------------------------------------------------------------------------
+
+int send_answ_to_human()
+{
+
+}
 
 //------------------------------------------------------------------------
 // do_client() обрабатывает соединение с сокетом клиента
 void do_client(int cl_sockfd, struct sockaddr_in* client_addr)
 {
-    char str[] = "Hi there!\n";
+    char comm_astr[COMM_ASTR_SZ+1];
+    char hs_name  [HS_NAME_SZ+1];
+    char hs_data  [HS_DATA_SZ+1];
 
-    struct timeval timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_usec = 0;
-    socklen_t optlen = sizeof(timeout);
-    // Меняем таймаут на отправку данных
-    if (setsockopt(cl_sockfd, SOL_SOCKET, SO_SNDTIMEO,
-                   (char *)&timeout, optlen) < 0)
-        printf("Ошибка: Невозможно задать настройки сокету\n");
+    prepare_str(comm_astr, COMM_ASTR_SZ+1);
+    prepare_str(hs_name,   HS_NAME_SZ+1);
+    prepare_str(hs_data,   HS_DATA_SZ+1);
 
-    const int count_send = 5;
-    const unsigned int usec_sleep = 1000000; // 1 сек
-    for (int i=0; i < count_send; ++i) { // Посылаем данные клиенту
-        if (send(cl_sockfd, &str, strlen(str), MSG_NOSIGNAL) <= 0) {
-            printf("Обрыв соединения с ip - %s, порт - %d\n",
-                   inet_ntoa(client_addr->sin_addr),
-                   ntohs(client_addr->sin_port));
-            break;
-        }
-        printf("Передано клиенту: ip - %s, порт - %d\n",
+    int answ = set_sendrecv_timeout(sockfd);
+    if (answ) printf("Ошибка: невозможно задать настройки сокету\n");
+
+    ssize_t sz = 0;
+    int code_comm_astr = 0;
+
+    // Pseudo code
+    // recv_hquery
+    // send_hquery_to_astrolog (coonnect to astrolog)
+    // recv_astrolog_answ
+    // send_astrolog_answ_to_human
+
+    // Получаем запрос от Человека
+    sz = recv_all(cl_sockfd, comm_astr, COMM_ASTR_SZ);
+    if (sz != COMM_ASTR_SZ) {
+        printf("Не получили данные необходимой длины, "
+               "закрываем соединение:\n");
+        printf("ip %s, порт номер %d\n",
                inet_ntoa(client_addr->sin_addr),
                ntohs(client_addr->sin_port));
-        printf("parent pid: %d, my_pid: %d\n",
-               getppid(), getpid());
-        usleep(usec_sleep);
+        return;
     }
+    printf("comm_astr: %s\n", comm_astr);
+
+    code_comm_astr = get_code_comm_astr(comm_astr);
+    if (code_comm_astr == stars_say) {
+        send_all(cl_sockfd, "DENIED!", strlen("DENIED!"));
+        return;
+    }
+    if (code_comm_astr < 0) {
+        printf("Неизвестная команда закрываем соединение:\n");
+        printf("ip %s, порт номер %d\n",
+               inet_ntoa(client_addr->sin_addr),
+               ntohs(client_addr->sin_port));
+        return;
+    }
+
 }
 
 //------------------------------------------------------------------------
@@ -53,15 +111,14 @@ int reap_zombie()
 
 //------------------------------------------------------------------------
 
-void work_server()
-{
-    // Создание сокета (AF_INET - сетевой(интернет),
-    // SOCK_STREAM - потоковый сокет, 0 - по умолчанию TCP)
-    int lsockfd = socket(AF_INET, SOCK_STREAM, 0);
+void work_secretary()
+{    
+    int lsockfd = socket(AF_INET, SOCK_STREAM, 0);  // Слушащий
     if(lsockfd < 0) {
         printf("Ошибка: Невозможно создать сокет\n");
         return;
     }
+
     // Разрешаем сокету использовать адрес сразу
     int one = 1;
     if (setsockopt(lsockfd, SOL_SOCKET, SO_REUSEADDR,
@@ -108,7 +165,7 @@ void work_server()
             break;
         }
         pid = fork();
-        if (pid == 0) {       // Дочерний
+        if (!pid) {           // Дочерний
             close(lsockfd);   // Завершаем слушающий сокет
             // При завершении родительского процесса
             // завершать дочернии
@@ -116,7 +173,7 @@ void work_server()
                 printf("Ошибка prctl()");
             printf("child pid: =%d\n", getpid());
 
-            do_client(cl_sockfd, &client_addr); // Работаем с клиентом
+            do_human(cl_sockfd); // Работаем с клиентом
 
             close(cl_sockfd);                   // Закрываем сокет клиента
             exit(0);

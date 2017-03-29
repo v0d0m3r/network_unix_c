@@ -19,6 +19,8 @@
  * Ответ на неправильные запросы - закрытие соединения
 */
 
+//------------------------------------------------------------------------
+
 #include "../../my_lib.h"
 
 //------------------------------------------------------------------------
@@ -131,13 +133,6 @@ bool is_horoscope_name(const char* name)
 }
 
 //------------------------------------------------------------------------
-// Коды команд к астрологу
-enum Code_comm_astr
-{
-    stars_say, horoscope
-};
-
-//------------------------------------------------------------------------
 // Получить код входной команды
 int get_code_comm_astr(const char* comm_astr)
 {
@@ -197,7 +192,6 @@ int do_stars_say_comm_astr(int cl_sockfd, Horoscope_str* hs,
             return -1;
         }
     }
-
 
     sz = send_all(cl_sockfd, "THANKS!\n", PROTOCOL_ANSWER_SZ);
     if (sz != PROTOCOL_ANSWER_SZ) {
