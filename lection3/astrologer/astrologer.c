@@ -108,50 +108,6 @@ int get_data_horoscope(Horoscope_str* hs, char* dest_hs_data,
 }
 
 //------------------------------------------------------------------------
-// true, если входная строка является
-// именем одного из гороскопов
-bool is_horoscope_name(const char* name)
-{   
-    if (strlen(name) != HS_NAME_SZ) return false;
-    static char* hs_tb[] = {
-        "Aries", "Taurus", "Gemini", "Cancer", "Leo",
-        "Virgo", "Libra", "Scorpio", "Sagittarius",
-        "Capricorn", "Aquarius", "Pisces"
-    };
-
-    char tmp_str[HS_NAME_SZ+1];
-    static const size_t hs_tb_sz = 12;   // Количество гороскопов
-    for (size_t i=0; i < hs_tb_sz; ++i) {        
-        prepare_str(tmp_str, HS_NAME_SZ+1);
-        tmp_str[HS_NAME_SZ-1] = '\n';
-
-        strncpy(tmp_str, hs_tb[i], strlen(hs_tb[i]));
-        if (!strncmp(tmp_str, name, HS_NAME_SZ))
-            return true;
-    }
-    return false;
-}
-
-//------------------------------------------------------------------------
-// Получить код входной команды
-int get_code_comm_astr(const char* comm_astr)
-{
-    if (strlen(comm_astr) != COMM_ASTR_SZ) return -1;
-
-    static char* comm_astr_tb[] = {
-        "STARS SAY ", "HOROSCOPE "
-    };
-
-    if (!strncmp(comm_astr, comm_astr_tb[stars_say], COMM_ASTR_SZ))
-        return stars_say;
-
-    if (!strncmp(comm_astr, comm_astr_tb[horoscope], COMM_ASTR_SZ))
-        return horoscope;
-
-    return -2;
-}
-
-//------------------------------------------------------------------------
 // Обрабатываем соединение со звездой
 int do_stars_say_comm_astr(int cl_sockfd, Horoscope_str* hs,
                            char* hs_name, char* hs_data)
