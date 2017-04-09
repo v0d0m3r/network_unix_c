@@ -118,15 +118,23 @@ void clear_input()
 
 bool is_horoscope_name(const char* name)
 {
-    if (strlen(name) != HS_NAME_SZ) return false;
+    static const size_t hs_tb_sz = 12;   // Количество имен гороскопов
     static char* hs_tb[] = {
         "Aries", "Taurus", "Gemini", "Cancer", "Leo",
         "Virgo", "Libra", "Scorpio", "Sagittarius",
         "Capricorn", "Aquarius", "Pisces"
     };
 
+    if (strlen(name) != HS_NAME_SZ) {   // Для имени нефиксированного
+                                        // размера
+        for (size_t i=0; i < hs_tb_sz; ++i)
+            if (!strncmp(hs_tb[i], name, strlen(name)))
+                return true;
+        return false;
+    }
+
     char tmp_str[HS_NAME_SZ+1];
-    static const size_t hs_tb_sz = 12;   // Количество гороскопов
+
     for (size_t i=0; i < hs_tb_sz; ++i) {
         prepare_str(tmp_str, HS_NAME_SZ+1);
         tmp_str[HS_NAME_SZ-1] = '\n';
